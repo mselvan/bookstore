@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
+from fastapi.exceptions import RequestValidationError
 from pydantic import BaseModel, validator
 from typing import List
 import uvicorn
@@ -10,6 +11,10 @@ app = FastAPI()
 books = []
 next_id = 0
 
+# --- Custom exception ---
+class BookValidationError(Exception):
+    def __init__(self, message: str):
+        self.message = message
 
 # --- Book model ---
 class Book(BaseModel):
@@ -19,30 +24,41 @@ class Book(BaseModel):
 
     @validator("author")
     def validate_author(cls, v):
-        if v is None:
-            raise ValueError('Field "author" is required')
-        if not v.strip():
-            raise ValueError('Field "author" cannot be empty')
+        if v is None or not v.strip():
+            raise BookValidationError('Field "author" cannot be empty')
         return v
 
     @validator("title")
     def validate_title(cls, v):
-        if v is None:
-            raise ValueError('Field "title" is required')
-        if not v.strip():
-            raise ValueError('Field "title" cannot be empty')
+        if v is None or not v.strip():
+            raise BookValidationError('Field "title" cannot be empty')
         return v
 
+# --- Exception handlers ---
+@app.exception_handler(BookValidationError)
+async def book_validation_error_handler(request: Request, exc: BookValidationError):
+    return JSONResponse(status_code=400, content={"error": exc.message})
 
-@app.exception_handler(ValueError)
-async def value_error_handler(request: Request, exc: ValueError):
-    return JSONResponse(status_code=400, content={"error": str(exc)})
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    error = exc.errors()[0]
+    loc = error.get("loc", [])
+    field = loc[-1] if loc else "field"
+    if error["type"] == "missing":
+        msg = f'Field "{field}" is required'
+    else:
+        msg = error.get("msg", "Invalid input")
+    return JSONResponse(status_code=400, content={"error": msg})
 
 
+@app.exception_handler(HTTPException)
+async def custom_http_exception_handler(request: Request, exc: HTTPException):
+    return JSONResponse(status_code=exc.status_code, content={"error": exc.detail})
+
+# --- Endpoints ---
 @app.get("/api/books/", response_model=List[Book])
 def list_books():
     return books
-
 
 @app.get("/api/books/{book_id}", response_model=Book)
 def get_book(book_id: int):
@@ -51,16 +67,13 @@ def get_book(book_id: int):
             return book
     raise HTTPException(status_code=404, detail="Book not found")
 
-
 @app.put("/api/books/", response_model=Book)
 def add_book(new_book: Book):
     global next_id
 
-    # ID is read-only
     if new_book.id is not None:
-        raise HTTPException(status_code=400, detail="Field \"id\" is read-only")
+        raise HTTPException(status_code=400, detail='Field "id" is read-only')
 
-    # Duplicate check
     for book in books:
         if book["author"] == new_book.author and book["title"] == new_book.title:
             raise HTTPException(status_code=400, detail="Another book with similar title and author already exists")
@@ -78,13 +91,9 @@ def update_book(book_id: int, updated_book: Book):
         if book["id"] == book_id:
             if updated_book.id is not None and updated_book.id != book_id:
                 raise HTTPException(status_code=400, detail='Field "id" is read-only')
-            if not updated_book.title.strip():
-                raise HTTPException(status_code=400, detail='Field "title" cannot be empty')
-            if not updated_book.author.strip():
-                raise HTTPException(status_code=400, detail='Field "author" cannot be empty')
 
             updated = updated_book.dict()
-            updated["id"] = book_id  # enforce correct id
+            updated["id"] = book_id
             books[idx] = updated
             return updated
     raise HTTPException(status_code=404, detail="Book not found")
@@ -100,14 +109,9 @@ def delete_book(book_id: int):
 
 @app.middleware("http")
 async def reset_books_on_each_request(request: Request, call_next):
-    # Optional: reset for each request (only for strict test reset)
-    # global books, next_id
-    # books = []
-    # next_id = 0
+    # Optional reset logic here
     response = await call_next(request)
     return response
 
-
 if __name__ == "__main__":
     uvicorn.run(app, host="0.0.0.0", port=8000)
-

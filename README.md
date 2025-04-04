@@ -15,7 +15,7 @@ pip install fastapi uvicorn
 
 ### Run the API
 ```bash
-uvicorn fake-api:app --reload
+uvicorn fake_api:app --reload
 ```
 
 ## 📘 API Endpoints
