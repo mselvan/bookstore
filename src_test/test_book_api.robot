@@ -1,12 +1,18 @@
 *** Settings ***
 Library           RequestsLibrary
 Library           Collections
+Suite Setup       Reset Book Store
+Suite Teardown    Reset Book Store
 
 *** Variables ***
 ${BASE_URL}       http://localhost:8000
-${AUTHOR}         Manimaran Selvan
-${TITLE}          Autobiography of a Legend
+${AUTHOR}         Muthu Kamatchi Manickam
+${TITLE}          Autobiography
 ${BOOK_ID}        123
+
+*** Keywords ***
+Reset Book Store
+    DELETE    ${BASE_URL}/api/books
 
 *** Test Cases ***
 Verify That The API Starts With An Empty Store
