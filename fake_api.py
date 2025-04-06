@@ -107,6 +107,14 @@ def delete_book(book_id: int):
             return
     raise HTTPException(status_code=404, detail="Book not found")
 
+
+@app.delete("/api/books/", status_code=204)
+def reset_store():
+    global books
+    books = []
+
+
+
 @app.middleware("http")
 async def reset_books_on_each_request(request: Request, call_next):
     # Optional reset logic here
